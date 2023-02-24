@@ -10,17 +10,17 @@ export const UserContextProvider = ({ children }) => {
   const [id, setId] = useState(null);
 
   useEffect(() => {
-    axiosInstance.get("/profile").then((res) => {
+    axiosInstance.get("/auth/profile").then((res) => {
       if (res.request.status === 200) {
         setId(res.data.userId);
         setUsername(res.data.username);
       }
       setLoading(false);
-      console.log("setted loading false")
+      // console.log("setted loading false")
       
     }).catch(err=>{
         setLoading(false);
-        console.log("setted loading false")
+        // console.log("setted loading false")
     });
   
   }, []);

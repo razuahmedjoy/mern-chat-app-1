@@ -16,7 +16,7 @@ const RegisterAndLoginForm = () => {
     setError(null)
     e.preventDefault();
     try{
-      const url = isLoginOrRegister === "register" ? "/register" : "/login";
+      const url = isLoginOrRegister === "register" ? "/auth/register" : "/auth/login";
       const res = await axiosInstance.post(url, { username, password });
       setLoggedInUsername(username);
       setId(res.data.id);
