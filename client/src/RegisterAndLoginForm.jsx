@@ -8,7 +8,7 @@ const RegisterAndLoginForm = () => {
   const [error,setError] = useState(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoginOrRegister, setIsLoginOrRegister] = useState("register");
+  const [isLoginOrRegister, setIsLoginOrRegister] = useState("login");
   const { setUsername: setLoggedInUsername, setId,loading,setLoading } = useContext(UserContext);
 
   const handleSubmit = async (e) => {

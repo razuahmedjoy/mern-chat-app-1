@@ -10,12 +10,14 @@ const bcrypt = require("bcryptjs");
 const authRoutes = require("./routes/authRoutes");
 const ws = require("ws");
 const Message = require("./models/Message");
+const fs = require("fs");
 
 const port = 4000 || process.env.PORT;
 
 mongoose.set("strictQuery", false);
 mongoose.connect(process.env.DB_URL);
 
+app.use("/uploads",express.static(__dirname+"/uploads"))
 app.use(express.json());
 app.use(cookieParser());
 app.use(
@@ -32,18 +34,20 @@ const verifyToken = (req, res, next) => {
       message: "Token not found",
     });
   }
-  jwt.verify(token, process.env.JWT_SECRET_KEY, {}, async (err, decoded) => {
-    if (err) {
-      res.json({
-        message: err?.message,
-      });
-    }
-    // const {userId,username} = decoded;
 
+  try {
+    const decoded = jwt.verify(token,process.env.JWT_SECRET_KEY);
     req.userData = { ...decoded };
 
     next();
-  });
+  } catch(err) {
+    // err
+    res.clearCookie("token").status(400).json({
+        message:err?.message
+    })
+  }
+
+  
 };
 
 app.get("/", (req, res) => {
@@ -74,10 +78,14 @@ app.get("/messages/:userId", verifyToken, async (req, res) => {
   const messages = await Message.find({
     sender: { $in: [userData.userId, userId] },
     recipient: { $in: [userData.userId, userId] },
-  }).sort({createdAt:-1});
+  }).sort({ createdAt: 1 });
 
-    res.json(messages);
+  res.json(messages);
+});
 
+app.get("/people", async (req, res) => {
+  const users = await User.find({}).select("_id username");
+  res.json(users);
 });
 
 const server = app.listen(port, () => {
@@ -85,11 +93,43 @@ const server = app.listen(port, () => {
 });
 
 const ws_server = new ws.WebSocketServer({ server });
+
 ws_server.on("connection", (connection, req) => {
   // console.log("connected")
   // connection.send("hello")
 
-  // read username and if from the cookie for this connection
+  const notifyAboutOnlineUsers = () => {
+    // notify everyone when a new user joins (online peoples)
+    [...ws_server.clients].forEach((client) => {
+      client.send(
+        JSON.stringify({
+          online: [...ws_server.clients].map((c) => ({
+            userId: c.userId,
+            username: c.username,
+          })),
+        })
+      );
+    });
+  };
+
+  connection.isAlive = true;
+  connection.timer = setInterval(() => {
+    connection.ping();
+
+    connection.deathTimer = setTimeout(() => {
+      connection.isAlive = false;
+      clearInterval(connection.timer);
+      connection.terminate();
+      notifyAboutOnlineUsers();
+      console.log("death");
+    }, 1000);
+  }, 5000);
+
+  connection.on("pong", () => {
+    clearTimeout(connection.deathTimer);
+  });
+
+  // read username and id from the cookie for this connection
   const cookies = req.headers.cookie;
   if (cookies) {
     const tokenString = cookies
@@ -97,40 +137,46 @@ ws_server.on("connection", (connection, req) => {
       .find((str) => str.startsWith("token="));
     if (tokenString) {
       const token = tokenString.split("=")[1];
-      const userData = jwt.verify(token, process.env.JWT_SECRET_KEY);
-      //   console.log(userData)
-
-      if (userData) {
+      try {
+        const userData = jwt.verify(token, process.env.JWT_SECRET_KEY);
         //   console.log(userData)
-        const { userId, username } = userData;
-        connection.userId = userId;
-        connection.username = username;
+
+        if (userData) {
+          //   console.log(userData)
+          const { userId, username } = userData;
+          connection.userId = userId;
+          connection.username = username;
+        }
+      } catch (err) {
+        // console.log("error from socket ",err);
       }
     }
   }
 
-  // notify everyone when a new user joins (online peoples)
-  [...ws_server.clients].forEach((client) => {
-    client.send(
-      JSON.stringify({
-        online: [...ws_server.clients].map((c) => ({
-          userId: c.userId,
-          username: c.username,
-        })),
-      })
-    );
-  });
-
   connection.on("message", async (message, isBinary) => {
     // console.log(isBinary)
+    let fileName;
     const msg = JSON.parse(message.toString());
     // console.log(msg);
-    const { recipient, sender, text } = msg;
-    if (recipient && text) {
+    const { recipient, sender, text, file } = msg;
+    if (file) {
+      // console.log(file)
+      const parts = file.name.split(".");
+      const ext = parts[parts.length - 1];
+      fileName = `${Date.now()}.${ext}`;
+      const path = __dirname + "/uploads/" + fileName;
+      const bufferData = Buffer.from(file.data.split(",")[1], "base64");
+
+      fs.writeFile(path, bufferData, () => {
+        console.log("file saved ", path);
+      });
+    }
+    if (recipient && (text || file)) {
       const msgDoc = await Message.create({
         sender,
         recipient,
         text,
+        file: file ? fileName : null,
       });
       // find the receiver
       const receiver = [...ws_server.clients].filter(
@@ -143,11 +189,14 @@ ws_server.on("connection", (connection, req) => {
               sender: sender,
               text,
               recipient,
-              id: msgDoc._id,
+              file:file ? fileName:null,
+              _id: msgDoc._id,
             })
           );
         });
       }
     }
   });
+
+  notifyAboutOnlineUsers();
 });

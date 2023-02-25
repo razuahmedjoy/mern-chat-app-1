@@ -13,15 +13,17 @@ router.get("/profile",(req,res)=>{
             message:"Token not found"
         })
     }
-    jwt.verify(token,process.env.JWT_SECRET_KEY,{},(err,decoded)=>{
-        if(err){
-            res.json({
-                message:err?.message
-            })
-        }
-     
+
+    try {
+        var decoded = jwt.verify(token,process.env.JWT_SECRET_KEY);
         res.status(200).json(decoded)
-    })
+      } catch(err) {
+        // err
+        res.clearCookie("token").status(400).json({
+            message:err?.message
+        })
+      }
+   
 
 })
 
@@ -32,13 +34,18 @@ router.post("/login", async (req,res)=>{
         const validPass = bcrypt.compareSync(password,user.password)
         if(validPass){
 
-            const token = jwt.sign({userId:user._id,username},process.env.JWT_SECRET_KEY,{expiresIn:"1h"} )    
+            const token = jwt.sign({userId:user._id,username},process.env.JWT_SECRET_KEY,{expiresIn:"1d"} )    
     
             res.cookie('token',token,{sameSite:'none',secure:true}).status(200).json({
                 id:user._id,
                 username,
             });
 
+        }
+        else{
+            res.status(400).json({
+                message:"Invalid Credentials"
+            })
         }
     }
 
@@ -66,5 +73,14 @@ router.post("/register", async (req,res)=>{
 
 })
 
+router.post("/logout", async (req,res)=>{
+
+    res.clearCookie("token").status(200).json({
+        message:"Logout successful",
+        success:true
+
+    })
+
+})
 
 module.exports = router
